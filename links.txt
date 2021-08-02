@@ -1,2 +1,9 @@
 cgan: https://github.com/Lornatang/CGAN-PyTorch/blob/master/cgan_pytorch/models/generator.py
 article cgan: https://github.com/theoad/pscgan/tree/5b92817de8807334fd659198d311f11c7636550d
+
+LAG: Creating High Resolution Images with a Latent Adversarial Generator
+https://arxiv.org/pdf/2003.02365.pdf
+
+SRGAN: Photo-Realistic Single Image Super-Resolution Using a Generative Adversarial
+Network
+https://arxiv.org/pdf/1609.04802.pdf
