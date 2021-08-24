@@ -946,21 +946,19 @@ for epoch in range(epochs):
 
 """# Plots"""
 
-fig, ax = plt.subplots(1, 1, figsize=(10, 8))
-
-ax[0].plot(range(1, epochs + 1), train_loss, label='Train')
-ax[0].plot(range(1, epochs + 1), val_loss, label='Validation')
-ax[0].set_title('Training L2 Loss', fontsize=18)
-ax[0].set_xlabel('Epoch', fontsize=18)
-ax[0].set_ylabel('Loss', fontsize=18)
-ax[0].grid()
-ax[0].legend(fontsize=18)
-
-fig.tight_layout()
-fig.savefig("convergence.png")
+plt.figure(figsize=(10, 8))
+plt.plot(range(1, epochs + 1), train_loss, label='Train')
+plt.plot(range(1, epochs + 1), val_loss, label='Validation')
+plt.title('Training L2 Loss', fontsize=18)
+plt.xlabel('Epoch', fontsize=18)
+plt.ylabel('Loss', fontsize=18)
+plt.grid()
+plt.legend(fontsize=18)
+plt.tight_layout()
+plt.savefig("convergence.png")
 
 x, y = next(iter(train_loader))
-noiser = AddGaussianNoise(std=0.1, device='cpu')
+noiser = AddGaussianNoise(std=std, device='cpu')
 x_noised = noiser(x)
 out = model(x_noised.to(device)).cpu()
 
