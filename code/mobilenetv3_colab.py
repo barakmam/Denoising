@@ -46,7 +46,7 @@ files.upload()
 ! kaggle datasets list
 ! kaggle datasets download -d jessicali9530/celeba-dataset
 
-# Commented out IPython magic to ensure Python compatibility.
+## Commented out IPython magic to ensure Python compatibility.
 # %%capture
 # ! mkdir train
 # ! unzip /content/celeba-dataset.zip -d train
