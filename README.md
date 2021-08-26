@@ -1,1 +1,1 @@
-# super-resolution
+# Denoising
