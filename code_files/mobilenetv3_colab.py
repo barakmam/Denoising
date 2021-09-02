@@ -48,6 +48,38 @@ if device.type == 'cuda':
     print("Device: {}".format(t.cuda.get_device_name(0)))
 print("Device type: {}".format(device))
 
+"""# Hyperparameters"""
+
+batch_size = 64
+input_size = 128
+std = 0.3
+lr = 5e-4
+epochs = 30
+
+
+random_seed = 42
+np.random.seed(random_seed)
+t.backends.cudnn.enabled = False
+t.manual_seed(random_seed)
+
+
+"""# Use Pre-trained Nets"""
+use_pretrained = False
+if use_pretrained:
+    run_number = 1
+    with open('/inputs/TAU/DL/outputs/run' + str(run_number) + '/output_dict.pickle', 'rb') as handle:
+        output_dict = pickle.load(handle)
+
+    model = mobilenetv3(input_size=output_dict['input_size'], num_classes=10, in_channels=3, drop_prob=0.0,
+                          weights_dict=output_dict['net_dict'], progress=True, device=device).to(device)
+
+    input_size = output_dict['input_size']
+    std = output_dict['std']
+    lr = output_dict['lr']
+    epochs = output_dict['epochs']
+    batch_size = output_dict['batch_size']
+
+
 # create new run folder
 runs_dirs = os.listdir('/inputs/TAU/DL/outputs')
 curr_run = np.max([int(dir_name.split('run')[1]) for dir_name in runs_dirs]) + 1
@@ -57,14 +89,6 @@ dest_path = '/inputs/TAU/DL/outputs/run' + str(curr_run) + '/'
 
 logging.basicConfig(filename=dest_path + 'log.log', filemode='w', format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logging.getLogger().setLevel(logging.INFO)
-"""# Hyperparameters"""
-
-batch_size = 64
-input_size = 128
-random_seed = 42
-np.random.seed(random_seed)
-t.backends.cudnn.enabled = False
-t.manual_seed(random_seed)
 
 """# Get Data and Dataloaders"""
 
@@ -86,7 +110,6 @@ transform = transforms.Compose([transforms.ToTensor(),
                                 transforms.CenterCrop(178),
                                 transforms.Resize(input_size),
                                 transforms.RandomHorizontalFlip()])
-# dataset = datasets.ImageFolder(root='/content/train/img_align_celeba', transform=transform)
 dataset = datasets.ImageFolder(root='/inputs/TAU/DL/data/celeba/img_align_celeba', transform=transform)
 train_inds, val_inds = train_test_split(t.arange(len(dataset)), test_size=0.2)
 
@@ -132,18 +155,7 @@ val_loader = t.utils.data.DataLoader(dataset, batch_size=batch_size, sampler=val
 
 """# Training the Net"""
 
-lr = 5e-4
-epochs = 30
-std = 0.3
 
-
-"""# Use Pre-trained Nets"""
-
-# with open('output_dict.pickle', 'rb') as handle:
-#     output_dict = pickle.load(handle)
-
-# model = mobilenetv3(input_size=output_dict['input_size'], num_classes=10, in_channels=3, drop_prob=0.0,
-#                       weights_dict=output_dict['net_dict'], progress=True, device=device).to(device)
 """# Train a model from scratch"""
 
 model = mobilenetv3(input_size=input_size, num_classes=10, in_channels=3, drop_prob=0.0,
@@ -157,8 +169,8 @@ train_loss = []
 val_loss = []
 min_val_loss = math.inf
 
-print('Training Started!')
-logging.info('Training Started!')
+print('Training Started! input_size: ', input_size)
+logging.info('Training Started! input_size: ' + str(input_size))
 for epoch in range(epochs):
     start_time = time.time()
     model.train()   
@@ -218,7 +230,6 @@ for epoch in range(epochs):
         epoch + 1, epochs, train_loss[-1], val_loss[-1], end_time - start_time))
 
 
-
 """# Save Net dicts"""
 
 output_dict = {
@@ -245,8 +256,9 @@ all_images_modes = torch.cat([torch.stack([x[idx], x_noised[idx], out[idx]]) for
 grid = torchvision.utils.make_grid((all_images_modes - torch.min(all_images_modes))/(torch.max(all_images_modes) - torch.min(all_images_modes)), nrow=9)
 plt.figure(figsize=(30, 30))
 plt.imshow(grid.permute(1, 2, 0))
-plt.savefig(dest_path + 'output_grid.png')
 plt.tight_layout()
+plt.savefig(dest_path + 'output_grid.png')
+# plt.savefig('/inputs/TAU/DL/outputs/run3/' + 'output_grid.png')
 
 plt.figure(figsize=(10, 8))
 plt.plot(range(1, epochs + 1), train_loss, label='Train')
