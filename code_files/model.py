@@ -1,8 +1,7 @@
 """
 MobileNetV3 Architecture
 Using sources:
-
-
+TODO
 """
 
 import torch
@@ -15,26 +14,19 @@ from itertools import repeat
 import torch.nn.functional as F
 import torch.nn as nn
 import numpy as np
-
-# !pip install dropblock
 from dropblock import DropBlock2D
 from dropblock import LinearScheduler as DropBlockScheduled
 
-
-
-
-
-"""# Architecture"""
-
+# ======================================================================================================================
 
 def sigmoid(x, inplace: bool = False):
     return x.sigmoid_() if inplace else x.sigmoid()
 
 
-""" Layer/Module Helpers
+"""
+Layer/Module Helpers
 Hacked together by Ross Wightman
 """
-
 
 # From PyTorch internals
 def _ntuple(n):
@@ -666,18 +658,22 @@ class ConvBnAct(nn.Module):
         x = self.act1(x)
         return x
 
+# ======================================================================================================================
+""" Our modifications here! """
 
 class MobileNetV3(nn.Module):
-    """MobileNetV3 implementation.
+    """
+    MobileNetV3 implementation.
     """
 
-    def __init__(self, input_shape, num_classes=1000, in_channels=3, drop_prob=0.0, start_step=0, num_steps=int(3e5),
-                 device='cpu'):
+    def __init__(self, input_shape, in_channels=3, scaling_depth=3, start_step=0, num_steps=int(3e5), device='cpu'):
         super(MobileNetV3, self).__init__()
 
-        self.num_classes = num_classes
-        self.num_steps = num_steps
+        self.scaling_depth = scaling_depth
         self.start_step = start_step
+        self.num_steps = num_steps
+
+        assert((input_shape >= 2 ** scaling_depth) and (scaling_depth >= 1), "Invalid scaling_depth")
 
         self.ds = DepthwiseSeparableConv(in_chs=in_channels, out_chs=16, dw_kernel_size=3,
                                          stride=1, dilation=1, pad_type='', act_layer=nn.ReLU, noskip=False,
@@ -688,16 +684,27 @@ class MobileNetV3(nn.Module):
         self.bottlenecks_setting = [
             # in, exp, out, s, k,         dp,    se,      act
             [16, 16 * 3, 24, 2, 5, 0, False, nn.ReLU],  # -> size/2
-            [24, 24 * 3, 24, 1, 5, 0, True, nn.ReLU],  # -> size/2
-            [24, 24 * 3, 40, 2, 5, 0, False, nn.ReLU],  # -> size/4
-            [40, 40 * 6, 40, 1, 5, 0, True, nn.ReLU],  # -> size/4
-            [40, 40 * 6, 80, 2, 5, 0, True, nn.ReLU],  # -> size/8
-            [80, 80 * 6, 80, 1, 5, 0, True, nn.ReLU],  # -> size/8
-            [80, 80 * 6, 112, 1, 5, 0, True, nn.ReLU],  # -> size/8
-            [112, 112 * 6, 112, 1, 5, 0, True, nn.ReLU],  # -> size/8 # FOR INPUT SIZE 128
-            [112, 112 * 6, 192, 2, 5, 0, True, nn.ReLU],  # -> size/16 # FOR INPUT SIZE 128
-            [192, 192 * 6, 192, 1, 5, 0, True, nn.ReLU]  # -> size/16 # FOR INPUT SIZE 128
-        ]
+            [24, 24 * 3, 24, 1, 5, 0, True, nn.ReLU]  # -> size/2
+                ]
+        if scaling_depth >= 2:
+            self.bottlenecks_setting = self.bottlenecks_setting + [
+                [24, 24 * 3, 40, 2, 5, 0, False, nn.ReLU],  # -> size/4
+                [40, 40 * 6, 40, 1, 5, 0, True, nn.ReLU]  # -> size/4
+            ]
+
+        if scaling_depth >= 3:
+            self.bottlenecks_setting = self.bottlenecks_setting + [
+                [40, 40 * 6, 80, 2, 5, 0, True, nn.ReLU],  # -> size/8
+                [80, 80 * 6, 80, 1, 5, 0, True, nn.ReLU],  # -> size/8
+                [80, 80 * 6, 112, 1, 5, 0, True, nn.ReLU]  # -> size/8
+            ]
+
+        if scaling_depth >= 4:  # 4 is maximal depth
+            self.bottlenecks_setting = self.bottlenecks_setting + [
+                [112, 112 * 6, 112, 1, 5, 0, True, nn.ReLU],  # -> size/8
+                [112, 112 * 6, 192, 2, 5, 0, True, nn.ReLU],  # -> size/16
+                [192, 192 * 6, 192, 1, 5, 0, True, nn.ReLU]  # -> size/16
+            ]
 
         self.bottleneck_out_channles = self.bottlenecks_setting[-1][2]
 
@@ -714,19 +721,23 @@ class MobileNetV3(nn.Module):
 
         self.num_features = self._get_conv_output((in_channels, input_shape, input_shape))
 
-        self.decode = nn.Sequential(
-            nn.ConvTranspose2d(in_channels=960, out_channels=192, kernel_size=4, stride=2, padding=1), # -> size*2
-            nn.ConvTranspose2d(in_channels=192, out_channels=80, kernel_size=4, stride=2, padding=1), # -> size*4
-            nn.ConvTranspose2d(in_channels=80, out_channels=24, kernel_size=4, stride=2, padding=1), # -> size*8
-            # nn.ConvTranspose2d(in_channels=80, out_channels=in_channels, kernel_size=4, stride=2, padding=1), # -> size*8
-            nn.ConvTranspose2d(in_channels=24, out_channels=in_channels, kernel_size=4, stride=2, padding=1) # -> size*16 # FOR INPUT SIZE 128
+        decoder = [nn.ConvTranspose2d(in_channels=960, out_channels=192, kernel_size=4, stride=2, padding=1)]  # -> size*2
+        if scaling_depth == 2:
+            decoder.append(nn.ConvTranspose2d(in_channels=192, out_channels=in_channels, kernel_size=4, stride=2, padding=1))  # -> size*4
+        elif scaling_depth == 3:
+            decoder.append(nn.ConvTranspose2d(in_channels=192, out_channels=80, kernel_size=4, stride=2, padding=1))  # -> size*4
+            decoder.append(nn.ConvTranspose2d(in_channels=80, out_channels=in_channels, kernel_size=4, stride=2, padding=1))  # -> size*8
+        else:  # 4 is maximal depth
+            decoder.append(nn.ConvTranspose2d(in_channels=192, out_channels=80, kernel_size=4, stride=2, padding=1))  # -> size*4
+            decoder.append(nn.ConvTranspose2d(in_channels=80, out_channels=24, kernel_size=4, stride=2, padding=1))  # -> size*8
+            decoder.append(nn.ConvTranspose2d(in_channels=24, out_channels=in_channels, kernel_size=4, stride=2, padding=1))  # -> size*16
+        self.decode = nn.Sequential(decoder)
 
-        )
-
-        self.classifier = nn.Sequential(
-            nn.Dropout(),
-            nn.Linear(self.num_features, num_classes)
-        )
+        # belongs to classifier - we don't need this:
+        # self.classifier = nn.Sequential(
+        #     nn.Dropout(),
+        #     nn.Linear(self.num_features, num_classes)
+        # )
 
     def _get_conv_output(self, shape):
         batch_size = 1
@@ -735,7 +746,7 @@ class MobileNetV3(nn.Module):
         input = self.ds(input)
         input = self.bottlenecks(input)
         input = self.last_layer(input)
-        # output_feat = self.features(input)
+        # output_feat = self.features(input)  # belongs to classifier - we don't need this
         n_size = input.data.view(batch_size, -1).size(1)
         return n_size
 
@@ -759,22 +770,13 @@ class MobileNetV3(nn.Module):
         x = self.bottlenecks(x)
         x = self.last_layer(x)
         x = self.decode(x)
+        # belongs to classifier - we don't need this:
         # x = x.view(x.size(0), -1)
         # x = self.classifier(x)
         return x
 
-
-# TODO
-# model_urls = {
-#     'mobilenetv3_large_1.0_224': 'https://github.com/Randl/MobileNetV3-pytorch/blob/master/results/mobilenetv3large-v1/model_best0-ec869f9b.pth',
-# }
-
-
-def mobilenetv3(input_size=224, num_classes=1000, in_channels=3, drop_prob=0.0, weights_dict=None, progress=True,
-                device='cpu'):
-    model = MobileNetV3(input_shape=input_size, num_classes=num_classes, in_channels=in_channels, drop_prob=drop_prob,
-                        device=device)
-    name = 'mobilenetv3_{}'.format(input_size)
+def mobilenetv3(input_size=224, in_channels=3, scaling_depth=3, weights_dict=None, device='cpu'):
+    model = MobileNetV3(input_shape=input_size, in_channels=in_channels, scaling_depth=scaling_depth, device=device)
     if weights_dict is not None:
         model.load_state_dict(weights_dict)
     return model
