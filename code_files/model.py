@@ -687,18 +687,19 @@ class MobileNetV3(nn.Module):
         # setting of bottlenecks blocks
         self.bottlenecks_setting = [
             # in, exp, out, s, k,         dp,    se,      act
-            [16, 16 * 3, 24, 2, 5, 0, False, nn.ReLU],  # -> 112x112
-            [24, 24 * 3, 24, 1, 5, 0, True, nn.ReLU],  # -> 56x56
-            [24, 24 * 3, 40, 2, 5, 0, False, nn.ReLU],  # -> 56x56
-            [40, 40 * 6, 40, 1, 5, 0, True, nn.ReLU],  # -> 28x28
-            [40, 40 * 6, 80, 2, 5, 0, True, nn.ReLU],  # -> 28x28
-            [80, 80 * 6, 80, 1, 5, 0, True, nn.ReLU],  # -> 28x28
-            [80, 80 * 6, 112, 1, 5, 0, True, nn.ReLU],  # -> 14x14
-            [112, 112 * 6, 112, 1, 5, 0, True, nn.ReLU],  # -> 14x14
-            [112, 112 * 6, 192, 2, 5, 0, True, nn.ReLU],  # -> 14x14
-            [192, 192 * 6, 192, 1, 5, 0, True, nn.ReLU]  # ,  # -> 14x14
-            # [80, 480, 112, 1, 3, drop_prob, True, HardSwish],  # -> 14x14
+            [16, 16 * 3, 24, 2, 5, 0, False, nn.ReLU],  # -> size/2
+            [24, 24 * 3, 24, 1, 5, 0, True, nn.ReLU],  # -> size/2
+            [24, 24 * 3, 40, 2, 5, 0, False, nn.ReLU],  # -> size/4
+            [40, 40 * 6, 40, 1, 5, 0, True, nn.ReLU],  # -> size/4
+            [40, 40 * 6, 80, 2, 5, 0, True, nn.ReLU],  # -> size/8
+            [80, 80 * 6, 80, 1, 5, 0, True, nn.ReLU],  # -> size/8
+            [80, 80 * 6, 112, 1, 5, 0, True, nn.ReLU]#,  # -> size/8
+            # [112, 112 * 6, 112, 1, 5, 0, True, nn.ReLU],  # -> size/8
+            # [112, 112 * 6, 192, 2, 5, 0, True, nn.ReLU],  # -> size/16
+            # [192, 192 * 6, 192, 1, 5, 0, True, nn.ReLU]  # -> size/16
         ]
+
+        self.bottleneck_out_channles = self.bottlenecks_setting[-1][2]
 
         for l in self.bottlenecks_setting:
             l[0] = _make_divisible(l[0], 8)
@@ -707,17 +708,19 @@ class MobileNetV3(nn.Module):
 
         self.bottlenecks = self._make_bottlenecks().to(device)
 
-        self.last_layer = ConvBnAct(in_chs=192, out_chs=960, kernel_size=1,
+        self.last_layer = ConvBnAct(in_chs=self.bottleneck_out_channles, out_chs=960, kernel_size=1,
                                     stride=1, dilation=1, pad_type='', act_layer=nn.ReLU,
                                     norm_layer=nn.BatchNorm2d, norm_kwargs=None).to(device)
 
         self.num_features = self._get_conv_output((in_channels, input_shape, input_shape))
 
         self.decode = nn.Sequential(
-            nn.ConvTranspose2d(in_channels=960, out_channels=192, kernel_size=4, stride=2, padding=1),
-            nn.ConvTranspose2d(in_channels=192, out_channels=80, kernel_size=4, stride=2, padding=1),
-            nn.ConvTranspose2d(in_channels=80, out_channels=24, kernel_size=4, stride=2, padding=1),
-            nn.ConvTranspose2d(in_channels=24, out_channels=in_channels, kernel_size=4, stride=2, padding=1)
+            nn.ConvTranspose2d(in_channels=960, out_channels=192, kernel_size=4, stride=2, padding=1), # -> size*2
+            nn.ConvTranspose2d(in_channels=192, out_channels=80, kernel_size=4, stride=2, padding=1), # -> size*4
+            # nn.ConvTranspose2d(in_channels=80, out_channels=24, kernel_size=4, stride=2, padding=1)#, # -> size*8
+            nn.ConvTranspose2d(in_channels=80, out_channels=in_channels, kernel_size=4, stride=2, padding=1)#, # -> size*8
+            # nn.ConvTranspose2d(in_channels=24, out_channels=in_channels, kernel_size=4, stride=2, padding=1) # -> size*16
+
         )
 
         self.classifier = nn.Sequential(

@@ -8,6 +8,8 @@ Original file is located at
 
 # imports
 """
+import math
+import os
 
 import numpy as np
 import torch as t
@@ -22,8 +24,8 @@ import time
 import pickle
 import torch
 import logging
-from code_files.model import mobilenetv3
-
+# from code_files.model import mobilenetv3
+from model import mobilenetv3
 # ! pip install -q kaggle
 # from google.colab import files
 # files.upload()
@@ -46,14 +48,19 @@ if device.type == 'cuda':
     print("Device: {}".format(t.cuda.get_device_name(0)))
 print("Device type: {}".format(device))
 
+# create new run folder
+runs_dirs = os.listdir('/inputs/TAU/DL/outputs')
+curr_run = np.max([int(dir_name.split('run')[1]) for dir_name in runs_dirs]) + 1
+os.mkdir('/inputs/TAU/DL/outputs/run' + str(curr_run))
 
-dest_path = '/inputs/TAU/DL/outputs/'
+dest_path = '/inputs/TAU/DL/outputs/run' + str(curr_run) + '/'
 
 logging.basicConfig(filename=dest_path + 'log.log', filemode='w', format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logging.getLogger().setLevel(logging.INFO)
 """# Hyperparameters"""
 
 batch_size = 64
+input_size = 128
 random_seed = 42
 np.random.seed(random_seed)
 t.backends.cudnn.enabled = False
@@ -74,27 +81,18 @@ class AddGaussianNoise(object):
         return self.__class__.__name__ + '(mean={0}, std={1})'.format(self.mean, self.std)
 
 
-# %%capture
 transform = transforms.Compose([transforms.ToTensor(),
                                 transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
                                 transforms.CenterCrop(178),
-                                transforms.Resize(32),
+                                transforms.Resize(input_size),
                                 transforms.RandomHorizontalFlip()])
 # dataset = datasets.ImageFolder(root='/content/train/img_align_celeba', transform=transform)
 dataset = datasets.ImageFolder(root='/inputs/TAU/DL/data/celeba/img_align_celeba', transform=transform)
-#
-# # testset = datasets.CelebA(root='./data', transform=transform, download=True, split='test')
-# 
-# # dataset = datasets.MNIST(root='./data', train=True, download=True, transform=transform)
-# # testset = datasets.MNIST(root='./data', train=False, download=True, transform=transform)
-#
-
 train_inds, val_inds = train_test_split(t.arange(len(dataset)), test_size=0.2)
 
 # get dataloaders
 train_sampler = t.utils.data.SubsetRandomSampler(train_inds)
 val_sampler = t.utils.data.SubsetRandomSampler(val_inds)
-
 train_loader = t.utils.data.DataLoader(dataset, batch_size=batch_size, sampler=train_sampler)
 val_loader = t.utils.data.DataLoader(dataset, batch_size=batch_size, sampler=val_sampler)
 # test_loader = t.utils.data.DataLoader(testset, batch_size=batch_size, shuffle=True)
@@ -124,32 +122,43 @@ val_loader = t.utils.data.DataLoader(dataset, batch_size=batch_size, sampler=val
 #     print(str(ii) + ': ', x.shape)
 
 # x, y = next(iter(train_loader))
-# noiser = AddGaussianNoise(std=0.1, device='cpu')
-#
+# noiser = AddGaussianNoise(std=0.3, device='cpu')
 # grid_img = torchvision.utils.make_grid(noiser((x + 1)/2), ncol=5)
 # plt.figure(figsize=(8, 10))
 # plt.imshow(grid_img.permute(1, 2, 0))
 # plt.tight_layout()
-# plt.imshow(x[0, :, 20:-20, :].cpu().numpy().transpose(1, 2, 0))
+
+# plt.imshow(x[0].cpu().numpy().transpose(1, 2, 0))
 
 """# Training the Net"""
 
-lr = 1e-3
-epochs = 1
-std = 0.1
-input_size = 64
+lr = 5e-4
+epochs = 30
+std = 0.3
+
+
+"""# Use Pre-trained Nets"""
+
+# with open('output_dict.pickle', 'rb') as handle:
+#     output_dict = pickle.load(handle)
+
+# model = mobilenetv3(input_size=output_dict['input_size'], num_classes=10, in_channels=3, drop_prob=0.0,
+#                       weights_dict=output_dict['net_dict'], progress=True, device=device).to(device)
+"""# Train a model from scratch"""
 
 model = mobilenetv3(input_size=input_size, num_classes=10, in_channels=3, drop_prob=0.0,
                 weights_dict=None, progress=True, device=device).to(device)
 noiser = AddGaussianNoise(std=std, device=device)
 
 criterion = nn.MSELoss()
-optimizer = t.optim.Adam(model.parameters(), lr=lr) 
+optimizer = t.optim.Adam(model.parameters(), lr=lr)
 
 train_loss = []
 val_loss = []
+min_val_loss = math.inf
 
 print('Training Started!')
+logging.info('Training Started!')
 for epoch in range(epochs):
     start_time = time.time()
     model.train()   
@@ -163,21 +172,24 @@ for epoch in range(epochs):
         loss = criterion(output, x)
         loss.backward()
         optimizer.step()
+        train_tot_loss += loss.item()
+        train_total += len(y)
+    train_loss.append(train_tot_loss/len(train_loader))
 
     
     # train evaluation:
-    model.eval()
+    # model.eval()
     # train_total = 0
-    train_tot_loss = 0
-    with t.no_grad():
-        for x, y in train_loader:
-            x, y = x.to(device), y.to(device)
-            x_noised = noiser(x)
-            output = model(x_noised)
-            loss = criterion(output, x) 
-            train_tot_loss += loss.item()
-            train_total += len(y)
-        train_loss.append(train_tot_loss/len(train_loader))
+    # train_tot_loss = 0
+    # with t.no_grad():
+    #     for x, y in train_loader:
+    #         x, y = x.to(device), y.to(device)
+    #         x_noised = noiser(x)
+    #         output = model(x_noised)
+    #         loss = criterion(output, x)
+    #         train_tot_loss += loss.item()
+    #         train_total += len(y)
+    #     train_loss.append(train_tot_loss/len(train_loader))
 
     
     # validation evaluation:
@@ -194,14 +206,47 @@ for epoch in range(epochs):
             val_total += len(y)
         val_loss.append(val_tot_loss/len(val_loader))
 
+    if val_loss[-1] < min_val_loss:
+        min_val_loss = val_loss[-1]
+        best_model_dict = model.state_dict()
+
     end_time = time.time()
-    logging.info('[Epoch {}/{}] -> Train Loss: {:.3f}, Validation Loss: {:.3f}, Time: {:.3f}'.format(
+    logging.info('[Epoch {}/{}] -> Train Loss: {:.4f}, Validation Loss: {:.4f}, Time: {:.1f}'.format(
         epoch + 1, epochs, train_loss[-1], val_loss[-1], end_time - start_time))
 
-    print('[Epoch {}/{}] -> Train Loss: {:.3f}, Validation Loss: {:.3f}, Time: {:.3f}'.format(
+    print('[Epoch {}/{}] -> Train Loss: {:.4f}, Validation Loss: {:.4f}, Time: {:.1f}'.format(
         epoch + 1, epochs, train_loss[-1], val_loss[-1], end_time - start_time))
+
+
+
+"""# Save Net dicts"""
+
+output_dict = {
+    "epochs": epochs,
+    "lr": lr,
+    "batch_size": batch_size,
+    "std": std,
+    "input_size": input_size,
+    "train_loss": train_loss,
+    "val_loss": val_loss,
+    "net_dict": best_model_dict
+}
+
+with open(dest_path + 'output_dict.pickle', 'wb') as handle:
+    pickle.dump(output_dict, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
 """# Plots"""
+
+x, y = next(iter(val_loader))
+noiser = AddGaussianNoise(std=std, device='cpu')
+x_noised = noiser(x)
+out = model(x_noised.to(device)).cpu()
+all_images_modes = torch.cat([torch.stack([x[idx], x_noised[idx], out[idx]]) for idx in range(len(x))], dim=0)
+grid = torchvision.utils.make_grid((all_images_modes - torch.min(all_images_modes))/(torch.max(all_images_modes) - torch.min(all_images_modes)), nrow=9)
+plt.figure(figsize=(30, 30))
+plt.imshow(grid.permute(1, 2, 0))
+plt.savefig(dest_path + 'output_grid.png')
+plt.tight_layout()
 
 plt.figure(figsize=(10, 8))
 plt.plot(range(1, epochs + 1), train_loss, label='Train')
@@ -213,39 +258,3 @@ plt.grid()
 plt.legend(fontsize=18)
 plt.tight_layout()
 plt.savefig(dest_path + 'convergence.png')
-
-x, y = next(iter(train_loader))
-noiser = AddGaussianNoise(std=std, device='cpu')
-x_noised = noiser(x)
-out = model(x_noised.to(device)).cpu()
-
-all_images_modes = torch.cat([torch.stack([x[idx], x_noised[idx], out[idx]]) for idx in range(len(x))], dim=0)
-grid = torchvision.utils.make_grid((all_images_modes - torch.min(all_images_modes))/(torch.max(all_images_modes) - torch.min(all_images_modes)), nrow=9)
-plt.figure(figsize=(30, 30))
-plt.imshow(grid.permute(1, 2, 0))
-plt.savefig(dest_path + 'output_grid.png')
-plt.tight_layout()
-
-"""# Save Net dicts"""
-
-output_dict = {
-    "epochs": epochs,
-    "lr": lr, 
-    "batch_size": batch_size,
-    "std": std,
-    "input_size": input_size,
-    "train_loss": train_loss, 
-    "val_loss": val_loss, 
-    "net_dict": model.state_dict()
-}
-
-with open(dest_path + 'output_dict.pickle', 'wb') as handle:
-    pickle.dump(output_dict, handle, protocol=pickle.HIGHEST_PROTOCOL)
-
-"""# Use Pre-trained Nets"""
-
-# with open('output_dict.pickle', 'rb') as handle:
-#     output_dict = pickle.load(handle)
-
-# model = mobilenetv3(input_size=input_size, num_classes=10, in_channels=3, drop_prob=0.0,
-#             weights_dict=output_dict['net_dict'], progress=True, device=device).to(device)
