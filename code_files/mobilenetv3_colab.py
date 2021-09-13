@@ -51,9 +51,9 @@ print("Device type: {}".format(device))
 """# Hyperparameters"""
 
 batch_size = 64
-input_size = 128
+input_size = 32
 std = 0.3
-lr = 5e-4
+lr = 2e-3
 epochs = 30
 
 
@@ -66,7 +66,7 @@ t.manual_seed(random_seed)
 """# Use Pre-trained Nets"""
 use_pretrained = False
 if use_pretrained:
-    run_number = 1
+    run_number = 4
     with open('/inputs/TAU/DL/outputs/run' + str(run_number) + '/output_dict.pickle', 'rb') as handle:
         output_dict = pickle.load(handle)
 
@@ -92,6 +92,7 @@ logging.getLogger().setLevel(logging.INFO)
 
 """# Get Data and Dataloaders"""
 
+
 class AddGaussianNoise(object):
     def __init__(self, mean=0., std=1., device='cpu'):
         self.std = std
@@ -107,11 +108,12 @@ class AddGaussianNoise(object):
 
 transform = transforms.Compose([transforms.ToTensor(),
                                 transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
-                                transforms.CenterCrop(178),
+                                # transforms.CenterCrop(178),
                                 transforms.Resize(input_size),
                                 transforms.RandomHorizontalFlip()])
-dataset = datasets.ImageFolder(root='/inputs/TAU/DL/data/celeba/img_align_celeba', transform=transform)
-train_inds, val_inds = train_test_split(t.arange(len(dataset)), test_size=0.2)
+data_path = '/inputs/TAU/DL/data/ffhq/images'  # '/inputs/TAU/DL/data/celeba/img_align_celeba'
+dataset = datasets.ImageFolder(root=data_path, transform=transform)
+train_inds, val_inds = train_test_split(t.arange(len(dataset)), test_size=0.1)
 
 # get dataloaders
 train_sampler = t.utils.data.SubsetRandomSampler(train_inds)
@@ -152,9 +154,6 @@ val_loader = t.utils.data.DataLoader(dataset, batch_size=batch_size, sampler=val
 # plt.tight_layout()
 
 # plt.imshow(x[0].cpu().numpy().transpose(1, 2, 0))
-
-"""# Training the Net"""
-
 
 """# Train a model from scratch"""
 
@@ -228,7 +227,6 @@ for epoch in range(epochs):
 
     print('[Epoch {}/{}] -> Train Loss: {:.4f}, Validation Loss: {:.4f}, Time: {:.1f}'.format(
         epoch + 1, epochs, train_loss[-1], val_loss[-1], end_time - start_time))
-
 
 """# Save Net dicts"""
 
