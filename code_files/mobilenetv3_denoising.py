@@ -15,24 +15,37 @@ from sklearn.model_selection import train_test_split
 import logging
 
 from model import mobilenetv3
-
 # ==================================================================================================================== #
 """ Hyperparameters """
 # Note: these may be change when using a pretrained model!
 batch_size = 64
 input_size = 128
-scaling_depth = 3  # model will scale the images down by 2^scaling_depth during encoding
-std = 0.3
+scaling_depth = 4  # model will scale the images down by 2^scaling_depth during encoding
+std = 0.2
 lr = 5e-4
 epochs = 30
 random_seed = 42
 pretrained_run_number = None  # None for training new model, number for loading pretrained model
 filesPath = '/inputs/TAU/DL/'
-dataPath = filesPath + '/data/celeba/img_align_celeba'
+dataPath = filesPath + '/data/ffhq/images'  # '/data/celeba/img_align_celeba'  # '/data/ffhq/images'
 
 np.random.seed(random_seed)
 torch.backends.cudnn.enabled = False
 torch.manual_seed(random_seed)
+
+
+class AddGaussianNoise(object):
+    def __init__(self, mean=0., std=1., device='cpu'):
+        self.std = std
+        self.mean = mean
+        self.device = device
+
+    def __call__(self, tensor):
+        return tensor + torch.randn(tensor.size()).to(self.device) * self.std + self.mean
+
+    def __repr__(self):
+        return self.__class__.__name__ + '(mean={0}, std={1})'.format(self.mean, self.std)
+
 
 # ==================================================================================================================== #
 if __name__ == '__main__':
@@ -79,7 +92,7 @@ if __name__ == '__main__':
     ######################################
     transform = transforms.Compose([transforms.ToTensor(),
                                     transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
-                                    transforms.CenterCrop(178),  # TODO: this may be a problem if we change to dataset with smaller images
+                                    # transforms.CenterCrop(178),  # TODO: this may be a problem if we change to dataset with smaller images
                                     transforms.Resize(input_size),
                                     transforms.RandomHorizontalFlip()])
 
@@ -125,7 +138,7 @@ if __name__ == '__main__':
             train_loss.append(train_tot_loss / len(train_loader))
 
             # validation evaluation:
-            # model.eval()  # TODO: why not eval?
+            model.eval()
             val_total = 0
             val_tot_loss = 0
             with torch.no_grad():

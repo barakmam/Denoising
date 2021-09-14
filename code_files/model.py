@@ -731,7 +731,7 @@ class MobileNetV3(nn.Module):
             decoder.append(nn.ConvTranspose2d(in_channels=192, out_channels=80, kernel_size=4, stride=2, padding=1))  # -> size*4
             decoder.append(nn.ConvTranspose2d(in_channels=80, out_channels=24, kernel_size=4, stride=2, padding=1))  # -> size*8
             decoder.append(nn.ConvTranspose2d(in_channels=24, out_channels=in_channels, kernel_size=4, stride=2, padding=1))  # -> size*16
-        self.decode = nn.Sequential(decoder)
+        self.decode = nn.Sequential(*decoder)
 
         # belongs to classifier - we don't need this:
         # self.classifier = nn.Sequential(
