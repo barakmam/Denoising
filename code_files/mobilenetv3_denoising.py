@@ -6,6 +6,7 @@ import pickle
 import numpy as np
 import pandas as pd
 import scipy.stats
+from tqdm import tqdm
 
 import torch
 import torchvision.datasets as datasets
@@ -23,18 +24,18 @@ from torch.utils.tensorboard import SummaryWriter
 """ Hyperparameters """
 # Note: these may be change when using a pretrained model!
 batch_size = 64
-input_size = 128
-scaling_depth = 4  # model will scale the images down by 2^scaling_depth during encoding
-std = 0.2
+input_size = 32
+scaling_depth = 4 if input_size == 128 else 3  # model will scale the images down by 2^scaling_depth during encoding
+std = 0.3
 lr = 5e-4
 epochs = 100
 random_seed = 42
-pretrained_run_number = None  # 15  # None for training new model, number for loading pretrained model
-train_model = True  # False True
-use_cpu = False
+pretrained_run_number = 43  # None for training new model, number for loading pretrained model
+train_model = False  # TODO  # False True
+use_cpu = False  # False
 
 filesPath = '/inputs/TAU/DL/'
-data_type = 'ffhq'  # 'celeba'
+data_type = 'ffhq'  # 'ffhq'  # 'celeba'
 dataPath = filesPath + '/data/' + data_type + '/images'  #
 
 
@@ -98,7 +99,7 @@ def calc_psnr(model, dataloader, device):
             out = model(x_noised)
             mse.append(torch.mean(((out - x)/2)**2, dim=(1, 2, 3)))
     avg_mse = torch.mean(torch.hstack(mse))
-    avg_psnr = 20*np.log10(1/avg_mse.cpu())
+    avg_psnr = 10*np.log10(1/avg_mse.cpu())
     return avg_psnr
 
 
@@ -116,6 +117,7 @@ def plot_monitored_images(monitored_imgs, noised_monitored_imgs, model, dest_pat
         out = model(noised_monitored_imgs)
     all_images_modes = torch.cat([torch.stack([monitored_imgs[idx], noised_monitored_imgs[idx], out[idx]]) for idx in range(4)], dim=0)
     grid = torchvision.utils.make_grid((all_images_modes + 1) / 2, nrow=3)
+    grid = (grid - grid.min())/(grid.max() - grid.min())
     fig = plt.figure(figsize=(10, 12))
     plt.imshow(grid.permute(1, 2, 0).cpu())
     plt.tight_layout()
@@ -128,6 +130,7 @@ if __name__ == '__main__':
     # Choose device
     ######################################
     device = torch.device('cuda' if torch.cuda.is_available() and not use_cpu else 'cpu')
+    cpu_device = torch.device('cpu')
     if device.type == 'cuda':
         print("Device: {}".format(torch.cuda.get_device_name(0)))
     print("Device type: {}".format(device))
@@ -307,13 +310,15 @@ if __name__ == '__main__':
     ######################################
     # Plot Time Stats
     ######################################
+    # device = cpu_device
+    # model.to(device)
     noiser = AddGaussianNoise(std=std, device=device)
     inference_avg_time = []
     inference_ci_time = []
-    test_batches = [1, 16, 32, 64, 128, 256]
+    test_batches = [1, 16, 256]
     confidence_level = scipy.stats.norm.ppf(0.05/2)  # for ci of 0.95
-    val_sampler = torch.utils.data.SubsetRandomSampler(val_inds)
-    for batch in test_batches:
+    val_sampler = torch.utils.data.SubsetRandomSampler(val_inds[:5000])
+    for batch in tqdm(test_batches):
         tmp_val_loader = torch.utils.data.DataLoader(dataset, batch_size=batch, sampler=val_sampler, drop_last=True)
         image_avg_time, batch_std = test_time(tmp_val_loader, model, noiser, device)
         inference_avg_time.append(image_avg_time)
@@ -322,11 +327,16 @@ if __name__ == '__main__':
     inference_avg_time = np.array(inference_avg_time)
     inference_ci_time = np.array(inference_ci_time)
     plt.figure()
-    plt.bar(test_batches, inference_avg_time*1e3, yerr=inference_ci_time*1e3, align='center', alpha=0.5, ecolor='black', capsize=10)
+    plt.bar(test_batches, inference_avg_time*1e3, width=10, yerr=inference_ci_time*1e3, align='center', alpha=0.5, ecolor='black', capsize=7)
+    # plt.bar([1, 8, 16, 32, 128], [1, 2, 2, 5, 4], width=10, yerr=[0.1, 0.2, 0.4, 0.3, 0.2], align='center', alpha=0.5, ecolor='black', capsize=7)
     plt.title('Inference Time vs. Batch Size (' + str(device) + ')')
     plt.xlabel('batch size')
     plt.ylabel('time per image [ms]')
+    plt.xticks(test_batches, test_batches)
+    # plt.xticks([1, 8, 16, 32, 128], [1, 8, 16, 32, 128])
     plt.grid()
+    print('Times [ms]: ', inference_avg_time*1e3)
+    plt.show()
     plt.savefig(dest_path + 'time_stats_' + str(device))
 
     # create model diagram
